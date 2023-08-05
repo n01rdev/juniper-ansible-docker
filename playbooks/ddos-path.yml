@@ -1,0 +1,56 @@
+---
+- name: Juniper DDOS-PATH
+  hosts:
+    - router
+  roles:
+    - juniper.junos
+
+  vars_prompt:
+    - name: "username"
+      prompt: "JunOS Username"
+      private: no
+
+    - name: "password"
+      prompt: "JunOS Password"
+      private: yes
+
+  vars:
+    tmp_dir: "/etc/ansible/playbooks"
+    conf_file: "{{ tmp_dir }}/configuration_file.set"
+
+  tasks:
+    - debug: var=tmp_dir
+    - debug: var=conf_file
+
+    - name: Install Configuration
+      juniper_junos_config:
+        host: "{{ inventory_hostname }}"
+        user: "{{ username }}"
+        passwd: "{{ password }}"
+        src: "{{ conf_file }}"
+        timeout: 120
+        ignore_warning: yes
+        load: set
+        comment: "Changed Configuration"
+        format: text
+      # confirm: 180
+        check_commit_wait: 4
+        check: true
+        commit: true
+      register: response # Guarda la respuesta en esta variable
+    - name: Show Response
+      debug: var=response
+
+    - name: Get Network Prefixes
+      junos_command:
+        commands: "show route community 59432:6662"
+      register: route_output # Guarda la respuesta en esta variable
+
+    - name: Grep Prefixes for take only the prefix
+      set_fact:
+        prefix_list: "{{ route_output.stdout_lines | regex_findall('(([12]?[0-9]{1,2}|2[0-4][0-9]|25[0-5])(\\.|\\/)){4}([1-2]?[0-9]|3[0-2])') }}"
+
+    - name: Add Prefixes to DDOS-PATH
+      junos_command:
+        commands: "set policy-options prefix-list DDOS-PATH {{ item }}"
+      with_items: "{{ prefix_list }}" # Itera sobre la lista de prefijos para añadirlos al path
